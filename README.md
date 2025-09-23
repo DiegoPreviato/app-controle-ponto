@@ -90,3 +90,14 @@ O sistema é dividido em duas partes principais:
     ```sh
     flutter run
     ```
+
+## Documentação da API (Swagger)
+
+A API do backend possui uma documentação interativa gerada automaticamente com o Swagger.
+
+Para acessá-la:
+
+1.  Certifique-se de que o servidor do backend esteja em execução.
+2.  Abra seu navegador e acesse: [http://localhost:8080/swagger/index.html](http://localhost:8080/swagger/index.html)
+
+Você poderá ver todos os endpoints, seus parâmetros, e testá-los diretamente pela interface.

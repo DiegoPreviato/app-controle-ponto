@@ -20,6 +20,17 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// Register godoc
+// @Summary      Registra um novo usuário
+// @Description  Cria um novo usuário no sistema com nome, email e senha.
+// @Tags         Authentication
+// @Accept       json
+// @Produce      json
+// @Param        user  body      models.User  true  "Dados do usuário para registro (ID e Horarios podem ser omitidos)"
+// @Success      201   {object}  map[string]string
+// @Failure      400   {string}  string "Invalid request body"
+// @Failure      500   {string}  string "Failed to create user"
+// @Router       /register [post]
 func Register(w http.ResponseWriter, r *http.Request) {
 	var user models.User
 	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
@@ -43,6 +54,18 @@ func Register(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"message": "User created successfully"})
 }
 
+// Login godoc
+// @Summary      Realiza o login do usuário
+// @Description  Autentica um usuário com email e senha e retorna um token JWT.
+// @Tags         Authentication
+// @Accept       json
+// @Produce      json
+// @Param        credentials  body      models.User  true  "Credenciais de login (apenas email e password são necessários)"
+// @Success      200          {object}  map[string]string
+// @Failure      400          {string}  string "Invalid request body"
+// @Failure      401          {string}  string "Invalid credentials"
+// @Failure      500          {string}  string "Internal server error"
+// @Router       /login [post]
 func Login(w http.ResponseWriter, r *http.Request) {
 	var creds models.User
 	if err := json.NewDecoder(r.Body).Decode(&creds); err != nil {

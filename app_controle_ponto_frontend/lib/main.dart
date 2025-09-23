@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
+// PASSO 1: main corrigido com a inicialização
 void main() {
   initializeDateFormatting('pt_BR', null).then((_) {
     runApp(const MyApp());
@@ -66,230 +67,58 @@ class _PontoScreenState extends State<PontoScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchDataForSelectedDate();
+    // Lógica de inicialização de dados ainda desativada
+    // _fetchDataForSelectedDate();
   }
 
   Future<void> _fetchDataForSelectedDate() async {
-    await _fetchDailyRecords();
-    _calculateTotalHours();
-    _calculatePredictedExit();
+    // Lógica desativada por enquanto
   }
 
   Future<void> _fetchDailyRecords() async {
-    try {
-      final formattedDate = DateFormat('yyyy-MM-dd').format(_selectedDate);
-      final url = Uri.parse('http://127.0.0.1:8080/pontos/$formattedDate');
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        final List<dynamic> recordsJson = jsonDecode(response.body);
-        setState(() {
-          _dailyRecords = recordsJson.map((record) {
-            return {
-              'id': record['id'],
-              'timestamp': DateTime.parse(record['horario']).toLocal()
-            };
-          }).toList();
-          _dailyRecords.sort((a, b) => a['timestamp'].compareTo(b['timestamp']));
-          for (int i = 0; i < _dailyRecords.length; i++) {
-            _dailyRecords[i]['type'] = (i % 2 == 0) ? 'check-in' : 'check-out';
-          }
-        });
-      } else if (response.statusCode == 204) {
-        setState(() {
-          _dailyRecords = [];
-        });
-      }
-    } catch (e) {
-      // Handle error
-    }
+    // Lógica desativada por enquanto
   }
 
   void _calculateTotalHours() {
-    Duration totalDuration = Duration.zero;
-    DateTime? entryTime;
-
-    for (var record in _dailyRecords) {
-      if (record['type'] == 'check-in') {
-        entryTime = record['timestamp'];
-      } else if (record['type'] == 'check-out' && entryTime != null) {
-        totalDuration += record['timestamp'].difference(entryTime);
-        entryTime = null;
-      }
-    }
-
-    if (entryTime != null) {
-      totalDuration += DateTime.now().difference(entryTime);
-    }
-
-    setState(() {
-      _totalHoursWorked = "${totalDuration.inHours.toString().padLeft(2, '0')}h ${totalDuration.inMinutes.remainder(60).toString().padLeft(2, '0')}m";
-    });
+    // Lógica desativada por enquanto
   }
 
   void _calculatePredictedExit() {
-    const requiredWorkDuration = Duration(hours: 8);
-    Duration workedDuration = Duration.zero;
-    DateTime? firstEntry;
-
-    for (var record in _dailyRecords) {
-      if (firstEntry == null && record['type'] == 'check-in') {
-        firstEntry = record['timestamp'];
-      }
-      if (record['type'] == 'check-out') {
-        final correspondingEntry = _dailyRecords.lastWhere(
-          (e) => e['type'] == 'check-in' && e['timestamp'].isBefore(record['timestamp']),
-          orElse: () => {},
-        );
-        if (correspondingEntry.isNotEmpty) {
-          workedDuration += record['timestamp'].difference(correspondingEntry['timestamp']);
-        }
-      }
-    }
-
-    if (firstEntry == null) {
-      setState(() {
-        _predictedExit = 'N/A';
-      });
-      return;
-    }
-
-    final remainingDuration = requiredWorkDuration - workedDuration;
-    if (remainingDuration <= Duration.zero) {
-      setState(() {
-        _predictedExit = 'Completo';
-      });
-      return;
-    }
-
-    final predictedExitTime = DateTime.now().add(remainingDuration);
-    setState(() {
-      _predictedExit = DateFormat('HH:mm').format(predictedExitTime);
-    });
+    // Lógica desativada por enquanto
   }
 
   Future<void> _registrarPonto([DateTime? specificTime]) async {
-    try {
-      final timeToRegister = specificTime ?? DateTime.now();
-      final url = Uri.parse('http://127.0.0.1:8080/registrar-ponto');
-      final headers = {'Content-Type': 'application/json; charset=UTF-8'};
-      final body = jsonEncode({
-        'data': DateFormat('yyyy-MM-dd').format(timeToRegister),
-        'hora': timeToRegister.hour,
-        'minuto': timeToRegister.minute,
-      });
-
-      final response = await http.post(url, headers: headers, body: body);
-
-      if (response.statusCode == 201) {
-        _fetchDataForSelectedDate();
-      }
-    } catch (e) {
-      // Handle error
-    }
+    // Lógica desativada por enquanto
   }
 
   Future<void> _updatePonto(String id, TimeOfDay newTime) async {
-    try {
-      final url = Uri.parse('http://127.0.0.1:8080/pontos/$id');
-      final headers = {'Content-Type': 'application/json; charset=UTF-8'};
-      final body = jsonEncode({
-        'hora': newTime.hour,
-        'minuto': newTime.minute,
-      });
-
-      final response = await http.put(url, headers: headers, body: body);
-
-      if (response.statusCode == 200) {
-        _fetchDataForSelectedDate();
-      }
-    } catch (e) {
-      // Handle error
-    }
+    // Lógica desativada por enquanto
   }
 
   Future<void> _deletePonto(String id) async {
-    final bool? confirmed = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Confirmar Deleção'),
-        content: const Text('Você tem certeza que deseja deletar este registro?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancelar'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Deletar'),
-          ),
-        ],
-      ),
-    );
-
-    if (confirmed == true) {
-      try {
-        final url = Uri.parse('http://127.0.0.1:8080/pontos/$id');
-        final response = await http.delete(url);
-
-        if (response.statusCode == 200) {
-          _fetchDataForSelectedDate();
-        }
-      } catch (e) {
-        // Handle error
-      }
-    }
+    // Lógica desativada por enquanto
   }
 
   void _goToPreviousDay() {
     setState(() {
       _selectedDate = _selectedDate.subtract(const Duration(days: 1));
     });
-    _fetchDataForSelectedDate();
+    // _fetchDataForSelectedDate();
   }
 
   void _goToNextDay() {
     setState(() {
       _selectedDate = _selectedDate.add(const Duration(days: 1));
     });
-    _fetchDataForSelectedDate();
+    // _fetchDataForSelectedDate();
   }
 
   Future<void> _showDateTimePicker() async {
-    final DateTime? pickedDate = await showDatePicker(
-      context: context,
-      initialDate: _selectedDate,
-      firstDate: DateTime(2000),
-      lastDate: DateTime(2101),
-    );
-
-    if (pickedDate != null) {
-      final TimeOfDay? pickedTime = await showTimePicker(
-        context: context,
-        initialTime: TimeOfDay.fromDateTime(_selectedDate),
-      );
-      if (pickedTime != null) {
-        final selectedDateTime = DateTime(
-          pickedDate.year,
-          pickedDate.month,
-          pickedDate.day,
-          pickedTime.hour,
-          pickedTime.minute,
-        );
-        await _registrarPonto(selectedDateTime);
-      }
-    }
+    // Lógica desativada por enquanto
   }
 
   Future<void> _showEditDialog(String id, DateTime currentTime) async {
-    final TimeOfDay? newTime = await showTimePicker(
-      context: context,
-      initialTime: TimeOfDay.fromDateTime(currentTime),
-    );
-
-    if (newTime != null) {
-      await _updatePonto(id, newTime);
-    }
+    // Lógica desativada por enquanto
   }
 
   String _formatDate(DateTime date) {

@@ -1,0 +1,268 @@
+basePath: /api
+definitions:
+  handlers.PontoUpdatePayload:
+    properties:
+      horario:
+        type: string
+    type: object
+  models.Ponto:
+    properties:
+      horario:
+        type: string
+      id:
+        type: string
+      user_id:
+        type: integer
+    type: object
+  models.User:
+    properties:
+      email:
+        type: string
+      id:
+        type: integer
+      nome:
+        type: string
+      password:
+        description: omitempty so it's not sent in responses
+        type: string
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: API para gerenciamento de ponto de funcionários.
+  title: Controle de Ponto API
+  version: "1.0"
+paths:
+  /login:
+    post:
+      consumes:
+      - application/json
+      description: Autentica um usuário com email e senha e retorna um token JWT.
+      parameters:
+      - description: Credenciais de login (apenas email e password são necessários)
+        in: body
+        name: credentials
+        required: true
+        schema:
+          $ref: '#/definitions/models.User'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid request body
+          schema:
+            type: string
+        "401":
+          description: Invalid credentials
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      summary: Realiza o login do usuário
+      tags:
+      - Authentication
+  /pontos:
+    post:
+      description: Cria um novo registro de ponto com o horário atual para o usuário
+        autenticado.
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/models.Ponto'
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Registra um novo ponto
+      tags:
+      - Pontos
+  /pontos/{data}:
+    get:
+      description: Lista todos os registros de ponto de um usuário para uma data específica.
+      parameters:
+      - description: Data no formato YYYY-MM-DD
+        in: path
+        name: data
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/models.Ponto'
+            type: array
+        "400":
+          description: Invalid date format. Use YYYY-MM-DD
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Lista os pontos por data
+      tags:
+      - Pontos
+  /pontos/{data}/total-horas:
+    get:
+      description: Calcula o total de horas trabalhadas em um dia com base nos registros
+        de ponto (entrada/saída).
+      parameters:
+      - description: Data no formato YYYY-MM-DD
+        in: path
+        name: data
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid date format. Use YYYY-MM-DD
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Calcula horas trabalhadas
+      tags:
+      - Pontos
+  /pontos/{id}:
+    delete:
+      description: Deleta um registro de ponto existente.
+      parameters:
+      - description: ID do Ponto
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+          schema:
+            type: string
+        "400":
+          description: Invalid ID format
+          schema:
+            type: string
+        "404":
+          description: Ponto not found or permission denied
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Deleta um registro de ponto
+      tags:
+      - Pontos
+    put:
+      consumes:
+      - application/json
+      description: Atualiza o horário de um registro de ponto existente.
+      parameters:
+      - description: ID do Ponto
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Novo horário para o registro
+        in: body
+        name: horario
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.PontoUpdatePayload'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid ID format or request body
+          schema:
+            type: string
+        "404":
+          description: Ponto not found or permission denied
+          schema:
+            type: string
+        "500":
+          description: Internal server error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Atualiza um registro de ponto
+      tags:
+      - Pontos
+  /register:
+    post:
+      consumes:
+      - application/json
+      description: Cria um novo usuário no sistema com nome, email e senha.
+      parameters:
+      - description: Dados do usuário para registro (ID e Horarios podem ser omitidos)
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/models.User'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Invalid request body
+          schema:
+            type: string
+        "500":
+          description: Failed to create user
+          schema:
+            type: string
+      summary: Registra um novo usuário
+      tags:
+      - Authentication
+securityDefinitions:
+  ApiKeyAuth:
+    description: '"Bearer token"'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

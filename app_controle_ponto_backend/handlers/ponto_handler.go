@@ -28,11 +28,24 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	}
 }
 
+// PontoUpdatePayload define a estrutura para o corpo da requisição de atualização de ponto.
+// Isso é usado apenas para a documentação do Swagger.
+type PontoUpdatePayload struct {
+	Horario time.Time `json:"horario"`
+}
+
 // --- Handlers ---
 
-// RegistrarPonto registra um novo ponto com o horário atual para o usuário autenticado.
+// RegistrarPonto godoc
+// @Summary      Registra um novo ponto
+// @Description  Cria um novo registro de ponto com o horário atual para o usuário autenticado.
+// @Tags         Pontos
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Success      201  {object}  models.Ponto
+// @Failure      500  {string}  string "Internal server error"
+// @Router       /pontos [post]
 func RegistrarPonto(w http.ResponseWriter, r *http.Request) {
-	// Extrai o user_id do contexto, injetado pelo middleware
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
 		respondWithError(w, http.StatusInternalServerError, "Could not retrieve user ID from context")
@@ -59,7 +72,17 @@ func RegistrarPonto(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusCreated, novoPonto)
 }
 
-// ListarPontosPorData lista os pontos de um usuário em uma data específica.
+// ListarPontosPorData godoc
+// @Summary      Lista os pontos por data
+// @Description  Lista todos os registros de ponto de um usuário para uma data específica.
+// @Tags         Pontos
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Param        data  path      string  true  "Data no formato YYYY-MM-DD"
+// @Success      200   {array}   models.Ponto
+// @Failure      400   {string}  string  "Invalid date format. Use YYYY-MM-DD"
+// @Failure      500   {string}  string  "Internal server error"
+// @Router       /pontos/{data} [get]
 func ListarPontosPorData(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
@@ -74,7 +97,6 @@ func ListarPontosPorData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Define o início e o fim do dia para a consulta
 	startOfDay := parsedDate
 	endOfDay := startOfDay.Add(24 * time.Hour)
 
@@ -103,7 +125,17 @@ func ListarPontosPorData(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, pontos)
 }
 
-// CalcularHorasTrabalhadas calcula o total de horas trabalhadas em um dia.
+// CalcularHorasTrabalhadas godoc
+// @Summary      Calcula horas trabalhadas
+// @Description  Calcula o total de horas trabalhadas em um dia com base nos registros de ponto (entrada/saída).
+// @Tags         Pontos
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Param        data  path      string  true  "Data no formato YYYY-MM-DD"
+// @Success      200   {object}  map[string]string
+// @Failure      400   {string}  string  "Invalid date format. Use YYYY-MM-DD"
+// @Failure      500   {string}  string  "Internal server error"
+// @Router       /pontos/{data}/total-horas [get]
 func CalcularHorasTrabalhadas(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
@@ -165,7 +197,20 @@ func CalcularHorasTrabalhadas(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, resposta)
 }
 
-// AtualizarPonto atualiza o horário de um registro de ponto existente.
+// AtualizarPonto godoc
+// @Summary      Atualiza um registro de ponto
+// @Description  Atualiza o horário de um registro de ponto existente.
+// @Tags         Pontos
+// @Accept       json
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Param        id       path      int                  true  "ID do Ponto"
+// @Param        horario  body      PontoUpdatePayload   true  "Novo horário para o registro"
+// @Success      200      {object}  map[string]string
+// @Failure      400      {string}  string  "Invalid ID format or request body"
+// @Failure      404      {string}  string  "Ponto not found or permission denied"
+// @Failure      500      {string}  string  "Internal server error"
+// @Router       /pontos/{id} [put]
 func AtualizarPonto(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
@@ -180,9 +225,7 @@ func AtualizarPonto(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var payload struct {
-		Horario time.Time `json:"horario"`
-	}
+	var payload PontoUpdatePayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		respondWithError(w, http.StatusBadRequest, "Invalid request body")
 		return
@@ -213,7 +256,18 @@ func AtualizarPonto(w http.ResponseWriter, r *http.Request) {
 	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Ponto updated successfully"})
 }
 
-// DeletarPonto deleta um registro de ponto.
+// DeletarPonto godoc
+// @Summary      Deleta um registro de ponto
+// @Description  Deleta um registro de ponto existente.
+// @Tags         Pontos
+// @Produce      json
+// @Security     ApiKeyAuth
+// @Param        id   path      int  true  "ID do Ponto"
+// @Success      204  {string}  string "No Content"
+// @Failure      400  {string}  string  "Invalid ID format"
+// @Failure      404  {string}  string  "Ponto not found or permission denied"
+// @Failure      500  {string}  string  "Internal server error"
+// @Router       /pontos/{id} [delete]
 func DeletarPonto(w http.ResponseWriter, r *http.Request) {
 	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
 	if !ok {
