@@ -1,12 +1,11 @@
 package handlers
 
 import (
-	"bytes"
 	"controle-ponto-api/database"
+	"controle-ponto-api/middleware"
 	"controle-ponto-api/models"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"strconv"
@@ -18,7 +17,7 @@ import (
 // --- Funções Auxiliares ---
 
 func respondWithError(w http.ResponseWriter, code int, message string) {
-	respondWithJSON(w, code, map[string]string{"erro": message})
+	respondWithJSON(w, code, map[string]string{"error": message})
 }
 
 func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
@@ -29,131 +28,63 @@ func respondWithJSON(w http.ResponseWriter, code int, payload interface{}) {
 	}
 }
 
-func parseDateParam(r *http.Request) (string, error) {
-	dataParam := chi.URLParam(r, "data")
-	if _, err := time.Parse("2006-01-02", dataParam); err != nil {
-		return "", fmt.Errorf("formato de data inválido. Use AAAA-MM-DD")
-	}
-	return dataParam, nil
-}
-
 // --- Handlers ---
 
-// PontoRequest representa o corpo da requisição para registrar um ponto.
-type PontoRequest struct {
-	Data   string `json:"data"` // Formato: AAAA-MM-DD
-	Hora   int    `json:"hora"`
-	Minuto int    `json:"minuto"`
-}
-
-// RegistrarPonto é o handler para a rota que registra um novo ponto.
+// RegistrarPonto registra um novo ponto com o horário atual para o usuário autenticado.
 func RegistrarPonto(w http.ResponseWriter, r *http.Request) {
-	// Read the request body into a byte slice for logging
-	bodyBytes, err := io.ReadAll(r.Body)
-	if err != nil {
-		log.Printf("Erro ao ler corpo da requisição: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Erro interno do servidor")
-		return
-	}
-	// Restore the body for subsequent reads
-	r.Body = io.NopCloser(bytes.NewBuffer(bodyBytes))
-
-	log.Printf("Requisição recebida para /registrar-ponto. Corpo: %s", string(bodyBytes))
-
-	var req PontoRequest
-	if err = json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("Erro ao decodificar corpo da requisição: %v", err)
-		respondWithError(w, http.StatusBadRequest, "Corpo da requisição inválido")
+	// Extrai o user_id do contexto, injetado pelo middleware
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Could not retrieve user ID from context")
 		return
 	}
 
-	log.Printf("Dados decodificados: Data=%s, Hora=%d, Minuto=%d", req.Data, req.Hora, req.Minuto)
-
-	var validationErrors []string
-	var data time.Time
-
-	// Valida a data
-	data, err = time.Parse("2006-01-02", req.Data)
-	if err != nil {
-		validationErrors = append(validationErrors, "Formato de data inválido. Use AAAA-MM-DD.")
-	}
-
-	// Valida a hora
-	if req.Hora < 0 || req.Hora > 23 {
-		validationErrors = append(validationErrors, "Valor de hora inválido. Use um valor entre 0 e 23.")
-	}
-
-	// Valida o minuto
-	if req.Minuto < 0 || req.Minuto > 59 {
-		validationErrors = append(validationErrors, "Valor de minuto inválido. Use um valor entre 0 e 59.")
-	}
-
-	// Se houver erros de validação, retorna todos eles
-	if len(validationErrors) > 0 {
-		respondWithJSON(w, http.StatusBadRequest, map[string][]string{"erros": validationErrors})
-		return
-	}
-
-	// Se a validação passou, prossegue com a lógica de negócio
-	horarioDoPonto := time.Date(data.Year(), data.Month(), data.Day(), req.Hora, req.Minuto, 0, 0, time.Local)
-
-	// Verifica se já existe um ponto com o mesmo horário
-	var count int
-	err = database.DB.QueryRow("SELECT COUNT(*) FROM pontos WHERE horario = ?", horarioDoPonto).Scan(&count)
-	if err != nil {
-		log.Printf("Erro ao verificar duplicidade de ponto: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Erro interno do servidor ao verificar duplicidade")
-		return
-	}
-
-	if count > 0 {
-		respondWithError(w, http.StatusConflict, "Ponto com este horário já registrado.")
-		return
-	}
-
-	stmt, err := database.DB.Prepare("INSERT INTO pontos(horario) VALUES(?)")
-	if err != nil {
-		log.Printf("Erro ao preparar statement de inserção: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Erro interno do servidor")
-		return
-	}
-	defer stmt.Close()
-
-	res, err := stmt.Exec(horarioDoPonto)
-	if err != nil {
-		log.Printf("Erro ao executar inserção: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Erro interno do servidor")
-		return
-	}
-
-	id, err := res.LastInsertId()
-	if err != nil {
-		log.Printf("Erro ao obter o último ID inserido: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Erro interno do servidor")
-		return
-	}
-
+	horarioDoPonto := time.Now()
 	novoPonto := models.Ponto{
-		ID:      strconv.FormatInt(id, 10),
+		UserID:  userID,
 		Horario: horarioDoPonto,
+	}
+
+	err := database.DB.QueryRow(
+		"INSERT INTO pontos(user_id, horario) VALUES($1, $2) RETURNING id",
+		userID, horarioDoPonto,
+	).Scan(&novoPonto.ID)
+
+	if err != nil {
+		log.Printf("Error inserting new 'ponto': %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to register 'ponto'")
+		return
 	}
 
 	respondWithJSON(w, http.StatusCreated, novoPonto)
 }
 
-// ListarPontosPorData é o handler para a rota que lista os pontos de uma data.
+// ListarPontosPorData lista os pontos de um usuário em uma data específica.
 func ListarPontosPorData(w http.ResponseWriter, r *http.Request) {
-	dataParam, err := parseDateParam(r)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, err.Error())
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Could not retrieve user ID from context")
 		return
 	}
 
-	query := `SELECT id, horario FROM pontos WHERE date(horario, 'localtime') = ? ORDER BY horario ASC`
-	rows, err := database.DB.Query(query, dataParam)
+	dataParam := chi.URLParam(r, "data")
+	parsedDate, err := time.Parse("2006-01-02", dataParam)
 	if err != nil {
-		log.Printf("Erro ao consultar pontos por data: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Erro interno do servidor")
+		respondWithError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
+		return
+	}
+
+	// Define o início e o fim do dia para a consulta
+	startOfDay := parsedDate
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	rows, err := database.DB.Query(
+		"SELECT id, user_id, horario FROM pontos WHERE user_id = $1 AND horario >= $2 AND horario < $3 ORDER BY horario ASC",
+		userID, startOfDay, endOfDay,
+	)
+	if err != nil {
+		log.Printf("Error querying 'pontos' by date: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve 'pontos'")
 		return
 	}
 	defer rows.Close()
@@ -161,37 +92,42 @@ func ListarPontosPorData(w http.ResponseWriter, r *http.Request) {
 	pontos := []models.Ponto{}
 	for rows.Next() {
 		var p models.Ponto
-		var id int64
-		if err := rows.Scan(&id, &p.Horario); err != nil {
-			log.Printf("Erro ao escanear linha do banco: %v", err)
-			respondWithError(w, http.StatusInternalServerError, "Erro interno do servidor")
+		if err := rows.Scan(&p.ID, &p.UserID, &p.Horario); err != nil {
+			log.Printf("Error scanning 'ponto' row: %v", err)
+			respondWithError(w, http.StatusInternalServerError, "Failed to process 'pontos' data")
 			return
 		}
-		p.ID = strconv.FormatInt(id, 10)
 		pontos = append(pontos, p)
-	}
-
-	if len(pontos) == 0 {
-		respondWithJSON(w, http.StatusNoContent, nil)
-		return
 	}
 
 	respondWithJSON(w, http.StatusOK, pontos)
 }
 
-// CalcularHorasTrabalhadas é o handler para a rota que calcula o total de horas de um dia.
+// CalcularHorasTrabalhadas calcula o total de horas trabalhadas em um dia.
 func CalcularHorasTrabalhadas(w http.ResponseWriter, r *http.Request) {
-	dataParam, err := parseDateParam(r)
-	if err != nil {
-		respondWithError(w, http.StatusBadRequest, err.Error())
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Could not retrieve user ID from context")
 		return
 	}
 
-	query := `SELECT horario FROM pontos WHERE date(horario, 'localtime') = ? ORDER BY horario ASC`
-	rows, err := database.DB.Query(query, dataParam)
+	dataParam := chi.URLParam(r, "data")
+	parsedDate, err := time.Parse("2006-01-02", dataParam)
 	if err != nil {
-		log.Printf("Erro ao consultar pontos para cálculo: %v", err)
-		respondWithError(w, http.StatusInternalServerError, "Erro interno do servidor")
+		respondWithError(w, http.StatusBadRequest, "Invalid date format. Use YYYY-MM-DD")
+		return
+	}
+
+	startOfDay := parsedDate
+	endOfDay := startOfDay.Add(24 * time.Hour)
+
+	rows, err := database.DB.Query(
+		"SELECT horario FROM pontos WHERE user_id = $1 AND horario >= $2 AND horario < $3 ORDER BY horario ASC",
+		userID, startOfDay, endOfDay,
+	)
+	if err != nil {
+		log.Printf("Error querying 'pontos' for calculation: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to retrieve 'pontos' for calculation")
 		return
 	}
 	defer rows.Close()
@@ -200,16 +136,19 @@ func CalcularHorasTrabalhadas(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var horario time.Time
 		if err := rows.Scan(&horario); err != nil {
-			log.Printf("Erro ao escanear linha para cálculo: %v", err)
-			respondWithError(w, http.StatusInternalServerError, "Erro interno do servidor")
+			log.Printf("Error scanning 'horario' for calculation: %v", err)
+			respondWithError(w, http.StatusInternalServerError, "Failed to process 'horarios' for calculation")
 			return
 		}
 		horarios = append(horarios, horario)
 	}
 
 	var totalDuracao time.Duration
-	// Se o número de registros for ímpar, o último é ignorado, o que está correto.
-	for i := 0; i < len(horarios)-1; i += 2 {
+	if len(horarios)%2 != 0 {
+		horarios = horarios[:len(horarios)-1]
+	}
+
+	for i := 0; i < len(horarios); i += 2 {
 		entrada := horarios[i]
 		saida := horarios[i+1]
 		totalDuracao += saida.Sub(entrada)
@@ -217,12 +156,96 @@ func CalcularHorasTrabalhadas(w http.ResponseWriter, r *http.Request) {
 
 	totalHoras := int(totalDuracao.Hours())
 	totalMinutos := int(totalDuracao.Minutes()) % 60
-	totalSegundos := int(totalDuracao.Seconds()) % 60
 
 	resposta := map[string]string{
-		"total_trabalhado": fmt.Sprintf("%dh %dm %ds", totalHoras, totalMinutos, totalSegundos),
-		"total_segundos":   strconv.FormatFloat(totalDuracao.Seconds(), 'f', 0, 64),
+		"total_trabalhado": fmt.Sprintf("%dh %dm", totalHoras, totalMinutos),
+		"total_segundos":   fmt.Sprintf("%.0f", totalDuracao.Seconds()),
 	}
 
 	respondWithJSON(w, http.StatusOK, resposta)
+}
+
+// AtualizarPonto atualiza o horário de um registro de ponto existente.
+func AtualizarPonto(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Could not retrieve user ID from context")
+		return
+	}
+
+	idParam := chi.URLParam(r, "id")
+	pontoID, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid ID format")
+		return
+	}
+
+	var payload struct {
+		Horario time.Time `json:"horario"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid request body")
+		return
+	}
+
+	res, err := database.DB.Exec(
+		"UPDATE pontos SET horario = $1 WHERE id = $2 AND user_id = $3",
+		payload.Horario, pontoID, userID,
+	)
+	if err != nil {
+		log.Printf("Error updating 'ponto': %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to update 'ponto'")
+		return
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Error getting rows affected: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to confirm update")
+		return
+	}
+
+	if rowsAffected == 0 {
+		respondWithError(w, http.StatusNotFound, "'Ponto' not found or you don't have permission to update it")
+		return
+	}
+
+	respondWithJSON(w, http.StatusOK, map[string]string{"message": "Ponto updated successfully"})
+}
+
+// DeletarPonto deleta um registro de ponto.
+func DeletarPonto(w http.ResponseWriter, r *http.Request) {
+	userID, ok := r.Context().Value(middleware.UserIDKey).(int64)
+	if !ok {
+		respondWithError(w, http.StatusInternalServerError, "Could not retrieve user ID from context")
+		return
+	}
+
+	idParam := chi.URLParam(r, "id")
+	pontoID, err := strconv.ParseInt(idParam, 10, 64)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Invalid ID format")
+		return
+	}
+
+	res, err := database.DB.Exec("DELETE FROM pontos WHERE id = $1 AND user_id = $2", pontoID, userID)
+	if err != nil {
+		log.Printf("Error deleting 'ponto': %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to delete 'ponto'")
+		return
+	}
+
+	rowsAffected, err := res.RowsAffected()
+	if err != nil {
+		log.Printf("Error getting rows affected: %v", err)
+		respondWithError(w, http.StatusInternalServerError, "Failed to confirm deletion")
+		return
+	}
+
+	if rowsAffected == 0 {
+		respondWithError(w, http.StatusNotFound, "'Ponto' not found or you don't have permission to delete it")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }

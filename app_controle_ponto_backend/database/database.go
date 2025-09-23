@@ -4,31 +4,60 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 
-	_ "github.com/mattn/go-sqlite3" // O _ significa que estamos importando pelo efeito colateral (registrar o driver).
+	_ "github.com/lib/pq" // PostgreSQL driver
 )
 
 var DB *sql.DB
 
-// InitDB inicializa a conexão com o banco de dados e cria a tabela se ela não existir.
-func InitDB(filepath string) error {
-	var err error
-	DB, err = sql.Open("sqlite3", filepath)
-	if err != nil {
-		return fmt.Errorf("erro ao abrir o banco de dados: %w", err)
+// InitDB initializes the connection to the PostgreSQL database and creates tables if they don't exist.
+func InitDB() error {
+	connStr := os.Getenv("DATABASE_URL")
+	if connStr == "" {
+		log.Println("DATABASE_URL environment variable not set. Using default local connection string.")
+		connStr = "postgres://postgres:mysecretpassword@localhost/postgres?sslmode=disable"
 	}
 
-	// Tenta criar a tabela. Se ela já existir, o comando não fará nada.
-	createTableSQL := `CREATE TABLE IF NOT EXISTS pontos (
-		"id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
-		"horario" DATETIME NOT NULL
+	var err error
+	DB, err = sql.Open("postgres", connStr)
+	if err != nil {
+		return fmt.Errorf("error opening database: %w", err)
+	}
+
+	if err = DB.Ping(); err != nil {
+		return fmt.Errorf("error connecting to the database: %w", err)
+	}
+
+	// Create users table
+	createUsersTableSQL := `
+	CREATE TABLE IF NOT EXISTS users (
+		id SERIAL PRIMARY KEY,
+		nome VARCHAR(255) NOT NULL,
+		email VARCHAR(255) NOT NULL UNIQUE,
+		password_hash VARCHAR(255) NOT NULL
 	);`
 
-	_, err = DB.Exec(createTableSQL)
-	if err != nil {
-		return fmt.Errorf("erro ao criar a tabela 'pontos': %w", err)
+	if _, err = DB.Exec(createUsersTableSQL); err != nil {
+		return fmt.Errorf("error creating 'users' table: %w", err)
 	}
 
-	log.Println("Banco de dados inicializado e tabela 'pontos' pronta.")
+	// Create pontos table
+	createPontosTableSQL := `
+	CREATE TABLE IF NOT EXISTS pontos (
+		id SERIAL PRIMARY KEY,
+		user_id INTEGER NOT NULL,
+		horario TIMESTAMPTZ NOT NULL,
+		CONSTRAINT fk_user
+			FOREIGN KEY(user_id) 
+			REFERENCES users(id)
+			ON DELETE CASCADE
+	);`
+
+	if _, err = DB.Exec(createPontosTableSQL); err != nil {
+		return fmt.Errorf("error creating 'pontos' table: %w", err)
+	}
+
+	log.Println("Database initialized and tables are ready.")
 	return nil
 }
